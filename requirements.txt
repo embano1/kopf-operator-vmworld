@@ -1,0 +1,5 @@
+kopf==0.20
+pyVmomi==6.7.1.2018.12
+pydng==1.1.2
+pyvim==2.0.23
+typing==3.7.4
