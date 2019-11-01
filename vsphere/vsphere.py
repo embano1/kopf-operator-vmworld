@@ -6,7 +6,7 @@ from typing import List, Dict
 from time import sleep
 import logging
 from pyVim.connect import SmartConnect, SmartConnectNoSSL
-from pyVmomi import vim
+from pyVmomi import vim, vmodl
 import pydng
 
 class Error(Exception):
@@ -218,13 +218,18 @@ def delete_folder(content, dc: vim.Datacenter, folder_name: str):
         folder.Destroy_Task()
     except vim.fault.VimFault as f:
         raise DestroyError(f'could not delete folder "{folder_name}": {str(f)}')
+    except vmodl.fault.ManagedObjectNotFound:
+        pass
 
 def vm_group_exists(content, dc: vim.Datacenter, vmgroup_name: str) -> bool:
     """
     vm_group_exists checks whether a given VM group "vmgroup_name" already exists in the inventory in datacenter "dc"
     """
-    obj = get_obj(content, dc, [vim.Folder], vmgroup_name)
-    if obj is None:
+    try:
+        obj = get_obj(content, dc, [vim.Folder], vmgroup_name)
+        if obj is None:
+            return False
+        else:
+            return True
+    except vmodl.fault.ManagedObjectNotFound:
         return False
-    else:
-        return True

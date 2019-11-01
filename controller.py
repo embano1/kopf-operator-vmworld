@@ -22,9 +22,12 @@ DATACENTER = "vcqaDC"
 CLUSTER = "cls"
 DATASTORE = "sharedVmfs-0"
 
+# finalizers
+FINALIZER = 'vsphere.vmware.com/kopf-vm-operator'
+
 # register kopf handlers
 @kopf.on.event('vsphere.vmware.com', 'v1alpha1', 'vmgroups')
-def vm_operator(event, spec, meta, status, logger, **_):
+def vm_operator(event, body, spec, meta, status, patch, logger, **_):
     # poor man's throttle: give vcenter operations some time to catch up
     sleep(3)
 
@@ -33,15 +36,30 @@ def vm_operator(event, spec, meta, status, logger, **_):
     desired_replicas = spec.get('replicas')
     now = strftime("%Y-%m-%d %H:%M:%S", gmtime())
 
+    finalizers = body.get('metadata', {}).get('finalizers', [])
+    marked_deleted = body.get('metadata', {}).get('deletionTimestamp', None)
+
     event_type = event['type']
-    if event_type == "DELETED":
+    if event_type == "DELETED" or marked_deleted:
         logger.info(f'deleting vm group "{vmgroup}"')
-        # TODO: if something goes wrong deleting the folder/VMs, we only log the exception it in the function since the custom resource in Kubernetes is gone
-        # needs garbage collection routine for vCenter objects
-        delete_vm_group(vmgroup, logger)
+        exists = vm_group_exists(vmgroup)
+        if exists:
+            # TODO: if something goes wrong deleting the folder/VMs, we only log the exception it in the function since the custom resource in Kubernetes is gone
+            # needs garbage collection routine for vCenter objects
+            delete_vm_group(vmgroup, logger)
+        else:
+            logger.info(f'vm group already gone "{vmgroup}')
+        if FINALIZER in finalizers:
+            logger.info(f'removing finalizer "{FINALIZER}"')
+            patch.setdefault('metadata', {}).setdefault('finalizers', list(finalizers))
+            patch['metadata']['finalizers'].remove(FINALIZER)
         return
     
     # ADDED/MODIFIED event
+    if not FINALIZER in finalizers:
+        logger.info(f'adding finalizer "{FINALIZER}"')
+        patch.setdefault('metadata', {}).setdefault('finalizers', list(finalizers))
+        patch['metadata']['finalizers'].append(FINALIZER)
     try:
         phase = status['vm_operator']['phase']
     # if we don't find a status, initialize the object and set its state to "PENDING"

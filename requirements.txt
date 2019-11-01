@@ -1,4 +1,4 @@
-kopf==0.20
+kopf==0.22
 pyVmomi==6.7.1.2018.12
 pydng==1.1.2
 pyvim==2.0.23
