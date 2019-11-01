@@ -1,0 +1,7 @@
+# Ignore everything
+**
+
+# Include only what we need for the build
+!requirements.txt
+!vsphere
+!controller.py
