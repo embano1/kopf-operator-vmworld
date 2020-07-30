@@ -1,0 +1,12 @@
+apiVersion: vmworld.tanzu.vmware.com/v1alpha1
+kind: VmGroup
+metadata:
+  name: vg-2
+  labels:
+    vmworld: "2020"
+spec:
+  cpu: 2
+  memory: 1
+  replicas: 3
+  # forced error
+  template: kopf-vm-template1
