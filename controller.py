@@ -1,7 +1,7 @@
 """
 Controller implements the control loop logic for the kopf-operator
 """
-from typing import Dict
+from typing import Any, Dict
 import atexit, sys, os, logging
 from time import gmtime, strftime, sleep
 import kopf
@@ -26,7 +26,7 @@ DATASTORE = "sharedVmfs-0"
 FINALIZER = 'vsphere.vmware.com/kopf-vm-operator'
 
 # register kopf handlers
-@kopf.on.event('vsphere.vmware.com', 'v1alpha1', 'vmgroups')
+@kopf.on.event('vmworld.tanzu.vmware.com', 'v1alpha1', 'vmgroups')
 def vm_operator(event, body, spec, meta, status, patch, logger, **_):
     # poor man's throttle: give vcenter operations some time to catch up
     sleep(3)
@@ -61,7 +61,7 @@ def vm_operator(event, body, spec, meta, status, patch, logger, **_):
         patch.setdefault('metadata', {}).setdefault('finalizers', list(finalizers))
         patch['metadata']['finalizers'].append(FINALIZER)
     try:
-        phase = status['vm_operator']['phase']
+        phase = status['phase']
     # if we don't find a status, initialize the object and set its state to "PENDING"
     except KeyError:
         phase = "PENDING"
@@ -69,12 +69,12 @@ def vm_operator(event, body, spec, meta, status, patch, logger, **_):
     if phase == "PENDING":
         if template == "":
             phase = "ERROR"
-            return set_status(phase, now, 'no template speficied, check your deployment spec', 0, desired_replicas)
+            return set_status(phase, 'no template speficied, check your deployment spec', 0, desired_replicas)
             
         valid_template = validate_template(template, logger)
         if not valid_template:
             phase = "ERROR"
-            return set_status(phase, now, f'invalid template "{template}" specified', 0, desired_replicas)
+            return set_status(phase, f'invalid template "{template}" specified', 0, desired_replicas)
 
         # check if VM group already exists
         exists = vm_group_exists(vmgroup)
@@ -85,18 +85,18 @@ def vm_operator(event, body, spec, meta, status, patch, logger, **_):
             new_count = sync_replica_count(vmgroup, spec, current_replicas, desired_replicas, logger)
             if current_replicas == new_count:
                 phase = "READY"
-            return set_status(phase, now, 'synced replica count', new_count, desired_replicas)
+            return set_status(phase, 'synced replica count', new_count, desired_replicas)
 
         if not exists:
             new_count = create_vm_group(vmgroup, spec, logger)
             if new_count < 0:
                 phase = "ERROR"
-                return set_status(phase, now, 'error creating vm group instances (check kopf vsphere operator logs)', new_count, desired_replicas)
+                return set_status(phase, 'error creating vm group instances (check kopf vsphere operator logs)', new_count, desired_replicas)
             elif new_count == desired_replicas:
                 phase = "READY"
-                return set_status(phase, now, f'successfully deployed vm group "{vmgroup}"', new_count, desired_replicas)
+                return set_status(phase, f'successfully deployed vm group "{vmgroup}"', new_count, desired_replicas)
             else:
-                return set_status(phase, now, f'created vm group "{vmgroup}" and waiting for VMs to become ready', new_count, desired_replicas)
+                return set_status(phase, f'created vm group "{vmgroup}" and waiting for VMs to become ready', new_count, desired_replicas)
 
     # if we are in an ERROR state, don't retry (TODO: FIXME error handling :) and leave last error message as is for debugging
     elif phase == "ERROR":
@@ -112,11 +112,11 @@ def vm_operator(event, body, spec, meta, status, patch, logger, **_):
             if current_replicas != desired_replicas:
                 # set phase to "PENDING" and return so it will be resubmitted for event processing and caught by the logic above
                 phase = "PENDING"
-                return set_status(phase, now, f'vm group "{vmgroup} out of sync, submitting for resync"', current_replicas, desired_replicas)
+                return set_status(phase, f'vm group "{vmgroup} out of sync, submitting for resync"', current_replicas, desired_replicas)
         # if the vm group does not exist in vcenter but in Kubernetes, we've messed up - needs operator intervention
         else:
             phase = "ERROR"
-            return set_status(phase, now, 'kopf vsphere operator out of sync: custom resource exists but object not found in vcenter', new_count, desired_replicas)
+            return set_status(phase, 'kopf vsphere operator out of sync: custom resource exists but object not found in vcenter', 0, desired_replicas)
 
 def validate_template(template: str, logger: logging.Logger) -> bool:
     """
@@ -125,7 +125,7 @@ def validate_template(template: str, logger: logging.Logger) -> bool:
     valid = False
     try:
         valid = vsphere.find_template(content, dc, template)
-    except vim.fault.ManagedObjectNotFound as e:
+    except vim.fault as e:
         logger.warn(f'template "{template}" not found: {str(e)}')
     return valid
 
@@ -144,7 +144,7 @@ def delete_vm_group(vm_group: str, logger: logging.Logger):
     except vsphere.Error as e:
         logger.warn(str(e))
 
-def create_vm_group(vmgroup_name: str, vmgroup_spec: Dict[str, str], logger: logging.Logger) -> int:
+def create_vm_group(vmgroup_name: str, vmgroup_spec: Dict[str, Any], logger: logging.Logger) -> int:
     """
     create_vm_group creates a VM group "vm_group" in a pre-defined datacenter
     """
@@ -152,7 +152,7 @@ def create_vm_group(vmgroup_name: str, vmgroup_spec: Dict[str, str], logger: log
         vsphere.create_folder(dc, vmgroup_name)
     except vsphere.ObjectAlreadyExists as e:
         logger.warn(str(e))
-        return
+        return 0
 
     try:
         created = vsphere.clone_vm(content, dc, CLUSTER, DATASTORE, vmgroup_name, vmgroup_spec, logger)
@@ -162,7 +162,7 @@ def create_vm_group(vmgroup_name: str, vmgroup_spec: Dict[str, str], logger: log
 
     return created
 
-def sync_replica_count(vmgroup_name: str, vmgroup_spec: Dict[str, str], current: int, desired: int, logger: logging.Logger) -> int:
+def sync_replica_count(vmgroup_name: str, vmgroup_spec: kopf.Spec, current: int, desired: int, logger: logging.Logger) -> int:
     """
     sync_replica_count synchronises the current with the desired replica count for a VM group "vmgroup_name" 
     and VM group spec "vmgroup_spec" in a pre-defined content and datacenter
@@ -173,11 +173,14 @@ def sync_replica_count(vmgroup_name: str, vmgroup_spec: Dict[str, str], current:
         return current - deleted
     elif current < desired:
         diff = desired - current
-        # since we're using the generic clone_vm call on an existing vm group we have to change the replica count to only create "diff" number of instances
-        vmgroup_spec['replicas'] = diff
+        # since we're using the generic clone_vm call on an existing vm group we
+        # have to change the replica count to only create "diff" number of
+        # instances
+        spec = dict(vmgroup_spec)
+        spec['replicas'] = diff
         created = 0
         try:
-            created = vsphere.clone_vm(content, dc, CLUSTER, DATASTORE, vmgroup_name, vmgroup_spec, logger)
+            created = vsphere.clone_vm(content, dc, CLUSTER, DATASTORE, vmgroup_name, spec, logger)
         except vsphere.CloneError as e:
             # log the error but allow retry (TODO: this is probably not ok if the error is permanent)
             logger.warn(str(e))
@@ -204,13 +207,13 @@ def get_replicas(vm_group: str) -> int:
     """
     return vsphere.get_current_replicas(content, dc, vm_group)
 
-def set_status(phase: str, timestamp: str, message: str, current: int, desired: int) -> dict:
+def set_status(phase: str, message: str, current: int, desired: int) -> dict:
     """
     set_status is a convinience function to return status messages
     used by kopf to update a custom resource status
     """
     return {
-        'phase': phase, 'lastUpdated': timestamp, 'currentReplicas': current, 'desiredReplicas': desired, 'lastMessage': message}
+        'phase': phase, 'currentReplicas': current, 'desiredReplicas': desired, 'lastMessage': message}
 
 # establish connection to vsphere
 session = None

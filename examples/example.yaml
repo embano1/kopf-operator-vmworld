@@ -1,0 +1,9 @@
+apiVersion: vmworld.tanzu.vmware.com/v1alpha1
+kind: VmGroup
+metadata:
+  name: vg-1
+spec:
+  cpu: 1
+  memory: 1
+  replicas: 3
+  template: kopf-vm-template

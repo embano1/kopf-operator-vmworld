@@ -2,7 +2,7 @@
 """
 Package vsphere provides convinience methods for interacting with vCenter
 """
-from typing import List, Dict
+from typing import Any, List, Dict
 from time import sleep
 import logging
 from pyVim.connect import SmartConnect, SmartConnectNoSSL
@@ -35,7 +35,7 @@ def wait_for_task(task):
             print("there was an error")
             task_done = True
 
-def get_obj(content, dc: vim.Datacenter, vimtype: List[int], name: str) -> vim.view.ContainerView:
+def get_obj(content, dc: vim.Datacenter, vimtype: List, name: str) -> Any:
     """
     Return an object by name, if name is None the
     first found object is returned
@@ -91,7 +91,7 @@ def get_datacenter(content, datacenter: str) -> vim.Datacenter:
 
     return obj
 
-def find_template(content, datacenter: str, template: str) -> bool:
+def find_template(content, datacenter: vim.Datacenter, template: str) -> bool:
     """
     find_template checks whether the given template "template" exists in the given content and "datacenter" name
     """
@@ -101,7 +101,7 @@ def find_template(content, datacenter: str, template: str) -> bool:
     else:
         return False
 
-def clone_vm(content, dc: vim.Datacenter, cluster_name: str, datastore_name: str, vmgroup_name: str, vmgroup_config: Dict[str, str], logger: logging.Logger) -> int:
+def clone_vm(content, dc: vim.Datacenter, cluster_name: str, datastore_name: str, vmgroup_name: str, vmgroup_config: Dict[str,Any], logger: logging.Logger) -> int:
     """
     Creates VMs from a vmgroup configuration spec, returning the number of clones created
     """
@@ -137,7 +137,7 @@ def clone_vm(content, dc: vim.Datacenter, cluster_name: str, datastore_name: str
             template.Clone(folder=destfolder, name=name, spec=clonespec)
             vms.append(name)
             counter += 1
-        except vim.fault.VimFault as e:
+        except vim.fault as e:
             raise CloneError(str(e))
 
     return len(vms)
@@ -174,14 +174,14 @@ def delete_replicas(content, dc: vim.Datacenter, vmgroup_name: str, to_delete: i
         logger.info(f'powering off VM "{vm.name}" in VM group "{vmgroup_name}"')
         try:
             vm.PowerOff()
-        except vim.fault.VimFault as f:
+        except vim.fault as f:
             raise DestroyError(f'could not power off virtual machine "{vm}"": {str(f)}')
 
         logger.info(f'deleting VM "{vm.name}" from VM group "{vmgroup_name}"')
         try:
             vm.Destroy_Task()
             deleted += 1
-        except vim.fault.VimFault as f:
+        except vim.fault as f:
             raise DestroyError(f'could not delete virtual machine "{vm}": {str(f)}')
         
     return deleted
@@ -192,7 +192,7 @@ def create_folder(dc: vim.Datacenter, folder_name: str):
     """
     try:
         dc.vmFolder.CreateFolder(folder_name)
-    except vim.fault.VimFault:
+    except vim.fault:
         raise ObjectAlreadyExists(f'Folder "{folder_name}" already exists')
 
 def delete_folder(content, dc: vim.Datacenter, folder_name: str):
@@ -208,7 +208,7 @@ def delete_folder(content, dc: vim.Datacenter, folder_name: str):
         if isinstance(vm, vim.VirtualMachine):
             try:
                 vm.PowerOff()
-            except vim.fault.VimFault as f:
+            except vim.fault as f:
                 raise DestroyError(f'could not power off virtual machine "{vm}: {str(f)}"')
 
     # removes the folder and all children, i.e. VMs, from disk
@@ -216,7 +216,7 @@ def delete_folder(content, dc: vim.Datacenter, folder_name: str):
     sleep(5)
     try:
         folder.Destroy_Task()
-    except vim.fault.VimFault as f:
+    except vim.fault as f:
         raise DestroyError(f'could not delete folder "{folder_name}": {str(f)}')
     except vmodl.fault.ManagedObjectNotFound:
         pass

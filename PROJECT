@@ -1,0 +1,7 @@
+domain: vmworld.tanzu.vmware.com
+repo: github.com/embano1/kopf-operator-vmworld
+resources:
+- group: vmworld.tanzu.vmware.com
+  kind: VmGroup
+  version: v1alpha1
+version: "2"
