@@ -7,6 +7,6 @@ metadata:
 spec:
   cpu: 2
   memory: 1
-  replicas: 3
+  replicas: 2
   # forced error
   template: kopf-vm-template1
