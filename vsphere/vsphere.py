@@ -137,7 +137,7 @@ def clone_vm(content, dc: vim.Datacenter, cluster_name: str, datastore_name: str
             template.Clone(folder=destfolder, name=name, spec=clonespec)
             vms.append(name)
             counter += 1
-        except vim.fault as e:
+        except vim.fault.VimFault as e:
             raise CloneError(str(e))
 
     return len(vms)
@@ -174,14 +174,14 @@ def delete_replicas(content, dc: vim.Datacenter, vmgroup_name: str, to_delete: i
         logger.info(f'powering off VM "{vm.name}" in VM group "{vmgroup_name}"')
         try:
             vm.PowerOff()
-        except vim.fault as f:
+        except vim.fault.VimFault as f:
             raise DestroyError(f'could not power off virtual machine "{vm}"": {str(f)}')
 
         logger.info(f'deleting VM "{vm.name}" from VM group "{vmgroup_name}"')
         try:
             vm.Destroy_Task()
             deleted += 1
-        except vim.fault as f:
+        except vim.fault.VimFault as f:
             raise DestroyError(f'could not delete virtual machine "{vm}": {str(f)}')
         
     return deleted
@@ -192,7 +192,7 @@ def create_folder(dc: vim.Datacenter, folder_name: str):
     """
     try:
         dc.vmFolder.CreateFolder(folder_name)
-    except vim.fault:
+    except vim.fault.VimFault:
         raise ObjectAlreadyExists(f'Folder "{folder_name}" already exists')
 
 def delete_folder(content, dc: vim.Datacenter, folder_name: str):
@@ -208,7 +208,7 @@ def delete_folder(content, dc: vim.Datacenter, folder_name: str):
         if isinstance(vm, vim.VirtualMachine):
             try:
                 vm.PowerOff()
-            except vim.fault as f:
+            except vim.fault.VimFault as f:
                 raise DestroyError(f'could not power off virtual machine "{vm}: {str(f)}"')
 
     # removes the folder and all children, i.e. VMs, from disk
@@ -216,7 +216,7 @@ def delete_folder(content, dc: vim.Datacenter, folder_name: str):
     sleep(5)
     try:
         folder.Destroy_Task()
-    except vim.fault as f:
+    except vim.fault.VimFault as f:
         raise DestroyError(f'could not delete folder "{folder_name}": {str(f)}')
     except vmodl.fault.ManagedObjectNotFound:
         pass
